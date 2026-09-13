@@ -27,7 +27,7 @@ ln -sT /usr/lib/systemd/system/getty@.service /usr/lib/systemd/system/autovt@.se
 sed -i 's|^HOME=.*|HOME=/var/home|' "/etc/default/useradd"
 
 # set plymouth theme
-sed -i 's/bgrt/tartaria/g' /usr/share/plymouth/plymouthd.defaults
+plymouth-set-default-theme tartaria
 
 # remove any .pacnew files
 find /etc/ -name "*.pacnew" -type f -delete
@@ -57,6 +57,7 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 
 # install host-spawn
 retry wget -q https://github.com/1player/host-spawn/releases/download/v1.6.2/host-spawn-x86_64 -O /usr/lib/subsystem/bin/host-spawn
+chmod +x /usr/lib/subsystem/bin/host-spawn
 
 # hide some desktop entries
 sed -i '/^NoDisplay=/d;$aNoDisplay=true' /usr/share/applications/{avahi-discover,bssh,bvnc,lstopo,org.ffado.FfadoMixer,tuned-gui,assistant,designer,linguist,mpv,qdbusviewer,qv4l2,qvidcap,vim}.desktop
