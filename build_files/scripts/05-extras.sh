@@ -55,6 +55,9 @@ ln -sT /usr/share/tartaria/cherries/dot_config/niri/config.kdl /etc/niri/config.
 # apply gschema overrides
 glib-compile-schemas /usr/share/glib-2.0/schemas
 
+# install host-spawn
+retry wget -q https://github.com/1player/host-spawn/releases/download/v1.6.2/host-spawn-x86_64 -O /usr/lib/subsystem/bin/host-spawn
+
 # hide some desktop entries
 sed -i '/^NoDisplay=/d;$aNoDisplay=true' /usr/share/applications/{avahi-discover,bssh,bvnc,lstopo,org.ffado.FfadoMixer,tuned-gui,assistant,designer,linguist,mpv,qdbusviewer,qv4l2,qvidcap,vim}.desktop
 update-desktop-database

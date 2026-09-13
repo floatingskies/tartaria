@@ -17,4 +17,4 @@ elif [[ "$EUID" == "0" ]]; then
 fi
 
 # hand off control
-exec /usr/lib/subsystem/bin/shell
+exec /usr/lib/subsystem/bin/shell "$TERM"
