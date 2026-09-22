@@ -51,7 +51,7 @@ EOF
 
 # link default commands
 echo "[3/5] Linking default commands."
-for cmd in distrobox podman flatpak niri noctalia systemctl journalctl; do rm -f /usr/bin/$cmd; ln -sT /usr/libexec/host-spawn /usr/bin/"$cmd"; done
+for cmd in distrobox-* distrobox podman flatpak niri noctalia systemctl journalctl; do rm -f /usr/bin/$cmd; ln -sT /usr/libexec/host-spawn /usr/bin/"$cmd"; done
 
 # source user configs
 echo "[4/5] Sourcing user configurations."

@@ -13,7 +13,7 @@ retry pacman -S --noconfirm --needed mkosi
 # create dirs
 mkdir -p /usr/lib/subsystem/segments
 
-# build dummy arch rootfs - provides minimal /var
+# build dummy arch rootfs - provides minimal /var and /etc
 if ! retry mkosi build --force --directory="/mkosi" --environment="IMAGE_VARIANT=$IMAGE_VARIANT" >/tmp/mkosi.log 2>&1; then
     cat /tmp/mkosi.log
     exit 1
