@@ -1,8 +1,8 @@
-FROM docker.io/cachyos/cachyos-v3:latest AS base
+FROM docker.io/cachyos/cachyos-v3:latest@sha256:94ed7f789558cd3815a9355fbe12adc56681bf066ec6e3595bbc9d0b9a79cf9c AS base
 
 COPY system_files /
-COPY --from=ghcr.io/ublue-os/brew:latest /system_files /
-COPY --from=ghcr.io/tartaria-dev/cherries:latest / /usr/share/tartaria/cherries/
+COPY --from=ghcr.io/ublue-os/brew:latest@sha256:e9a72571b7644b6277f0638b6a3c5e497e265e1098ab91224567acbdeb8b74ea /system_files /
+COPY --from=ghcr.io/tartaria-dev/cherries:latest@sha256:93f26003c70de530d25140fd5cdf7513ba35f5bdacdc4faac31d91bc94e837f2 / /usr/share/tartaria/cherries/
 
 ARG IMAGE_FLAVOR
 ARG IMAGE_VARIANT
@@ -20,7 +20,8 @@ RUN --mount=type=bind,src=build_files/scripts,dst=/build \
     bash /build/03-systemd.sh && \
     bash /build/04-extras.sh && \
     bash /build/05-modsign.sh && \
-    bash /build/06-finalize.sh
+    bash /build/06-finalize.sh && \
+    bash /build/08-verify.sh
 
 RUN rm -rf /tmp/* /tmp/.* /run/* && \
     bootc container lint --fatal-warnings
@@ -35,7 +36,7 @@ RUN kver=$(ls /kernel) && \
     cp "/kernel/$kver/vmlinuz" "/usr/share/split-kernel/$kver/" && \
     rm -rf /kernel
 
-FROM quay.io/coreos/chunkah AS chunkah
+FROM quay.io/coreos/chunkah:latest@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708 AS chunkah
 ARG CHUNKAH_CONFIG_STR
 RUN --mount=from=rechunk-base,src=/,target=/chunkah,ro \
     chunkah build --skip-special-files --max-layers 128 --prune /ostree --prune /sysroot/ostree --output oci:/src/out

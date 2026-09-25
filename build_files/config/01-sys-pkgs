@@ -1,4 +1,5 @@
 # ========> system
+sudo
 base
 base-devel
 bootc/bootc
@@ -16,6 +17,7 @@ skopeo
 udev
 
 # ========> cli
+cosign
 atuin
 bash
 bash-completion

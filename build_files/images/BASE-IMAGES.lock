@@ -1,0 +1,15 @@
+# Base image pins for the Tartaria build.
+#
+# Every external image the build consumes is pinned by digest. A floating tag
+# means the same commit can produce two different images, and a compromised or
+# force-pushed upstream tag silently changes what ships.
+#
+# Refresh with:  just refresh-pins
+# Re-apply with: build_files/images/refresh-pins.sh
+#
+# ref                                                              digest
+archlinux:latest                                                  sha256:f3691b4dde62ba4c4b6f0ae2c1fbf28e8c0c8c4b9a35c7e06dc1f70e21aa29f6
+docker.io/cachyos/cachyos-v3:latest                              sha256:94ed7f789558cd3815a9355fbe12adc56681bf066ec6e3595bbc9d0b9a79cf9c
+quay.io/coreos/chunkah:latest                                    sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
+ghcr.io/ublue-os/brew:latest                                     sha256:e9a72571b7644b6277f0638b6a3c5e497e265e1098ab91224567acbdeb8b74ea
+ghcr.io/tartaria-dev/cherries:latest                             sha256:93f26003c70de530d25140fd5cdf7513ba35f5bdacdc4faac31d91bc94e837f2

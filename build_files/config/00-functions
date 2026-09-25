@@ -1,28 +1,57 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-only
+#
+# Shared helpers for the build stages. Sourced, never executed.
 
+# die <message...>
+#
+# Unconditional, unmistakable failure. Build stages run with `set -e`, but a
+# helper that swallows errors turns a hard stop into a silently wrong image.
+die() {
+    printf '\n[build-error] %s\n' "$*" >&2
+    exit 1
+}
+
+# retry <command...>
+#
+# Run a command until it succeeds, at most 3 attempts, linear-ish backoff.
+# Meant for genuinely flaky network operations (package downloads, key
+# fetches). Never use it to paper over a command that fails for a
+# deterministic reason: those will fail three times and then stop.
 retry() {
-    local attempt=1
-    local cmd=("$@")
+    local max=3 attempt=1
+    local -a cmd=("$@")
 
-    until "${cmd[@]}"; do
-        if (( attempt >= 3 )); then
-            echo "Command failed after ${attempt} attempts." >&2
+    while true; do
+        if "${cmd[@]}"; then
+            return 0
+        fi
+
+        if (( attempt >= max )); then
+            printf '\n[build-error] command failed %d times: %s\n' \
+                "$attempt" "${cmd[*]}" >&2
             return 1
         fi
-        echo "Attempt ${attempt} failed, retrying." >&2
-        sleep $(( attempt * 2 ))
+
+        printf '[retry] attempt %d/%d failed (%ss), retrying: %s\n' \
+            "$attempt" "$max" "$(( attempt * 5 ))" "${cmd[0]}" >&2
+        sleep $(( attempt * 5 ))
         (( attempt++ ))
     done
 }
 
 # kernel_version
 #
-# echo the module tree of the recorded kernel, e.g. "6.12.8.arch1-1" or
-# "7.2.7-bore"; the tree name is not always the package version, so it is
-# looked up in the package file list rather than derived from it
+# Echo the module tree of the kernel that was actually installed, e.g.
+# "6.12.8.arch1-1" or "7.2.7-bore".
+#
+# The tree name is NOT the package version (CachyOS ships 7.2.7-1 providing
+# the tree 7.2.7-bore), so it is read back from the recorded file list rather
+# than derived. Falls back to the newest tree on disk, but only when exactly
+# one candidate exists: with several trees present a guess would be a coin
+# flip, and the wrong choice produces an initramfs that boots to nothing.
 kernel_version() {
-    local recorded=""
+    local recorded="" candidates=() candidate=""
 
     if [[ -r /usr/lib/tartaria/kernel-info ]]; then
         # shellcheck source=/dev/null
@@ -35,17 +64,32 @@ kernel_version() {
         return 0
     fi
 
-    # fall back to the newest module tree that is actually on disk
-    find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
-        | sed 's|/usr/lib/modules/||' | sort -V | tail -n 1
+    if [[ -n "$recorded" ]]; then
+        die "recorded kernel tree '$recorded' is not on disk" \
+            "(available: $(ls -1 /usr/lib/modules 2>/dev/null | tr '\n' ' '))"
+    fi
+
+    while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && candidates+=("$candidate")
+    done < <(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+        | sed 's|^/usr/lib/modules/||' | sort -V)
+
+    case ${#candidates[@]} in
+        0) die "no kernel module tree found under /usr/lib/modules" ;;
+        1) printf '%s\n' "${candidates[0]}" ;;
+        *) die "ambiguous kernel: ${#candidates[@]} module trees on disk" \
+               "(${candidates[*]}) and none recorded; refusing to guess" ;;
+    esac
 }
 
 # record_kernel <package>...
 #
-# remember the kernel that was installed, so that later build stages don't
-# have to guess which of possibly several module trees is the right one
+# Remember the kernel package that was installed together with the module tree
+# it provides, so the later build stages never have to guess. Records the
+# headers package name too, which always follows the kernel package.
 record_kernel() {
     local package="" resolved="" kver=""
+    local -a listed=()
 
     for package in "$@"; do
         if pacman -Q "$package" >/dev/null 2>&1; then
@@ -55,42 +99,79 @@ record_kernel() {
     done
 
     if [[ -z "$resolved" ]]; then
-        echo "[!!!] None of the kernel packages ($*) is installed, the module tree will have to be guessed." >&2
-        return 0
+        die "none of the kernel packages ($*) is installed; cannot record kernel"
     fi
 
-    while read -r kver; do
-        [[ -n "$kver" && -d "/usr/lib/modules/$kver" ]] && break
+    # pacman -Ql prints "<pkgname> <path>" for every file, so the paths are not
+    # at the start of the line and an anchored match never fires. -Qql omits the
+    # package name; stripping any leading non-path token as well makes this
+    # correct for either spelling.
+    while IFS= read -r kver; do
+        [[ -n "$kver" ]] || continue
+        if [[ -d "/usr/lib/modules/$kver" ]]; then
+            break
+        fi
+        listed+=("$kver")
         kver=""
-    done < <(pacman -Ql "$resolved" 2>/dev/null | sed -n 's|^/usr/lib/modules/\([^/]*\)/.*|\1|p' | sort -u)
+    done < <(pacman -Qql "$resolved" 2>/dev/null \
+        | sed 's|^[^/]*[[:space:]]*||' \
+        | sed -n 's|^/usr/lib/modules/\([^/]*\)/.*|\1|p' | sort -u)
 
     if [[ -z "$kver" ]]; then
-        echo "[!!!] Could not work out the module tree of $resolved, the module tree will have to be guessed." >&2
-        return 0
+        if (( ${#listed[@]} > 0 )); then
+            # the database knows about a tree that is not on disk, so the
+            # package was registered without its files being unpacked
+            die "kernel '$resolved' lists module tree(s) '${listed[*]}' but they" \
+                "are not on disk; its install did not complete"
+        fi
+        die "could not determine the module tree provided by '$resolved'"
     fi
 
-    install -d /usr/lib/tartaria
-    cat <<EOF >/usr/lib/tartaria/kernel-info
-# generated by 01-packages.sh, consumed by 05-modsign.sh and 06-finalize.sh
-KERNEL_PACKAGE="$resolved"
-KERNEL_VERSION="$kver"
-KERNEL_HEADERS="${resolved}-headers"
-EOF
+    install -d -m 0755 /usr/lib/tartaria
+    cat >/usr/lib/tartaria/kernel-info <<-EOF
+	# generated by 01-packages.sh, consumed by 05-modsign.sh and 06-finalize.sh
+	KERNEL_PACKAGE="$resolved"
+	KERNEL_VERSION="$kver"
+	KERNEL_HEADERS="${resolved}-headers"
+	EOF
 }
 
 # set_os_release <name> <variant>
 #
-# rewrite the host identity without mangling upstream URLs, e.g. the privacy
-# policy link, which a global `s/Arch/Tartaria/` rewrite would destroy
+# Rewrite the host identity by key. A global `s/Arch/Tartaria/` rewrite would
+# also mangle upstream URLs that legitimately contain the word, notably
+# PRIVACY_POLICY_URL, which must keep pointing at the real policy.
 set_os_release() {
-    local name="$1" variant="$2"
-    local file="/usr/lib/os-release"
+    local name="$1" variant="$2" file="/usr/lib/os-release"
 
     sed -i \
         -e "s|^NAME=.*|NAME=\"$name\"|" \
         -e "s|^PRETTY_NAME=.*|PRETTY_NAME=\"$name ($variant)\"|" \
         "$file"
 
-    grep -q '^VARIANT=' "$file" || echo "VARIANT=\"$variant\"" >>"$file"
-    grep -q '^VARIANT_ID=' "$file" || echo "VARIANT_ID=\"$variant\"" >>"$file"
+    grep -q '^VARIANT=' "$file" || printf 'VARIANT="%s"\n' "$variant" >>"$file"
+    grep -q '^VARIANT_ID=' "$file" || printf 'VARIANT_ID="%s"\n' "$variant" >>"$file"
+}
+
+# enable_if_present <unit>...
+#
+# systemctl enable for units that this image actually ships. Units provided by
+# optional packages (bluetooth, cups, nvidia tooling) are absent on some
+# flavors, and a hard `systemctl enable` on a missing unit aborts the stage.
+# Missing optional units are reported, not silently ignored.
+enable_if_present() {
+    local unit="" missing=()
+
+    for unit in "$@"; do
+        if systemctl cat "$unit" >/dev/null 2>&1; then
+            systemctl enable "$unit"
+        else
+            missing+=("$unit")
+        fi
+    done
+
+    if (( ${#missing[@]} > 0 )); then
+        printf '[build-note] optional units not shipped by this image: %s\n' \
+            "${missing[*]}" >&2
+    fi
 }

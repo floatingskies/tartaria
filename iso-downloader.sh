@@ -64,14 +64,19 @@ choose() {
 choose "ISO Selection" "What base of Tartaria do you want? (enter the corresponding number)" bases base_answer
 
 # read user answer (NVIDIA drivers)
+# shellcheck disable=SC2034  # read back through the nameref in choose()
 nvidia_options=( "Yes" "No" )
+# shellcheck disable=SC2154  # assigned by choose() via printf -v
 choose "ISO Selection" "Do you need preinstalled NVIDIA drivers? (enter the corresponding number)" nvidia_options nvidia_answer
 
 # read user answer (Sealed/Unsealed)
+# shellcheck disable=SC2034  # read back through the nameref in choose()
 sealed_options=( "Sealed" "Unsealed" )
+# shellcheck disable=SC2154  # assigned by choose() via printf -v
 choose "ISO Selection" "Do you want the sealed or unsealed variant? (enter the corresponding number)" sealed_options sealed_answer
 
 # resolve tag & display name
+# shellcheck disable=SC2154  # both assigned by choose() via printf -v
 flavor_idx=$(( (nvidia_answer - 1) * 2 + (sealed_answer - 1) ))
 flavor="${flavors[$flavor_idx]}"
 tag="${base_prefixes[$((base_answer - 1))]}-${flavor}"

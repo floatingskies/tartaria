@@ -82,7 +82,9 @@ tartaria:<channel>-<edition>-<flavor>
 Run the following in a Linux terminal and go through the selection/download process:
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/tartaria-dev/tartaria/refs/heads/live/iso-downloader.sh)"
+curl -fsSLO https://raw.githubusercontent.com/tartaria-dev/tartaria/refs/heads/live/iso-downloader.sh
+less iso-downloader.sh   # read it before you run it
+bash iso-downloader.sh
 ```
 
 ### Rebasing
@@ -110,3 +112,38 @@ Thank you to the [Bootcrew](https://discord.gg/52Qcb4x2w3) team for making this 
 
 ## Metrics
 ![Alt](https://repobeats.axiom.co/api/embed/e1ddc95a13421c83c1bb9958fb3fc28c8fb02cce.svg "Repobeats analytics image")
+
+## Building
+
+Every flavour builds from a pinned base, and the build verifies itself before
+the image is published.
+
+```
+just refresh-pins        # re-resolve pinned base image digests
+just check-pins          # fail if any base image has moved
+just build arch-berbere  # requires podman and root
+```
+
+What the build guarantees:
+
+- **Base images are pinned by digest**, not by tag, in
+  `build_files/images/BASE-IMAGES.lock`. A floating tag means the same commit
+  can produce two different images.
+- **AUR packages are pinned by commit** in `build_files/config/02-aur-pkgs`.
+  There is no helper such as `yay`, so the package set is exactly the list in
+  that file. Packages ending in `-git` pin the recipe but not the upstream
+  source it fetches, and are therefore not fully reproducible.
+- **`08-verify.sh` runs last** and stops the build on a mangled
+  `PRIVACY_POLICY_URL`, a missing initramfs, an unsigned NVIDIA module, a
+  missing unit the shell model needs, or a root account with a usable
+  password.
+- **The CI builds the ref that triggered it.** A tag push builds that tag;
+  a schedule or manual run builds the branch head.
+
+Sealed flavours need `SECUREBOOT_KEY`, `SECUREBOOT_CERT`, `MODULE_KEY` and
+`MODULE_CERT` in the repository secrets. When they are absent the sealed jobs
+are skipped with a notice rather than failing, so a fork without Secure Boot
+material still builds the nonsealed flavours.
+
+The root account is locked. There is no console root login on a graphical
+image; recovery goes through a live image.

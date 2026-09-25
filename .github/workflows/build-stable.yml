@@ -21,7 +21,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Sealed variants need Secure Boot and NVIDIA module signing material. On a
+  # fork those secrets do not exist, and a build that needs them can only fail
+  # deep inside the base stage with a confusing "could not find certificate".
+  # Probe for them once and skip the sealed jobs cleanly instead.
+  sealed_preflight:
+    name: Check Secure Boot material
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+    steps:
+      - name: Probe for signing secrets
+        id: probe
+        env:
+          SECUREBOOT_KEY: ${{ secrets.SECUREBOOT_KEY }}
+          SECUREBOOT_CERT: ${{ secrets.SECUREBOOT_CERT }}
+          MODULE_KEY: ${{ secrets.MODULE_KEY }}
+          MODULE_CERT: ${{ secrets.MODULE_CERT }}
+        run: |
+          missing=()
+          [[ -n "$SECUREBOOT_KEY"  ]] || missing+=(SECUREBOOT_KEY)
+          [[ -n "$SECUREBOOT_CERT" ]] || missing+=(SECUREBOOT_CERT)
+          [[ -n "$MODULE_KEY"      ]] || missing+=(MODULE_KEY)
+          [[ -n "$MODULE_CERT"     ]] || missing+=(MODULE_CERT)
+          if (( ${#missing[@]} )); then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Sealed variants skipped::missing secrets: ${missing[*]}"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build_push_sealed:
+    needs: sealed_preflight
+    if: needs.sealed_preflight.outputs.available == 'true'
     name: Build Tartaria (sealed) (stable-${{ matrix.IMAGE_FLAVOR }})
     runs-on: ubuntu-26.04
     timeout-minutes: 120
@@ -49,15 +82,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout latest tag
+      - name: Resolve build ref
+        # A tag push builds exactly that tag; every other trigger (schedule,
+        # workflow_dispatch) builds the ref that triggered it. Checking out a
+        # fixed "latest tag" would silently build old code on every run.
         run: |
-          latest=$(git tag --list 'v*' --sort=-version:refname | head -1)
-          if [ -z "$latest" ]; then
-            echo "No 'v*' tag found. This workflow builds the latest release."
-            exit 1
+          if [[ "${{ github.ref_type }}" == tag ]]; then
+            echo "Building pushed tag: ${{ github.ref_name }}"
+          else
+            echo "Building ref: ${{ github.sha }}"
           fi
-          echo "Checking out latest tag: $latest"
-          git checkout "$latest"
+          git checkout --detach "${{ github.sha }}"
+          git log -1 --oneline
 
       - name: Prepare build
         id: prep
@@ -197,15 +233,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout latest tag
+      - name: Resolve build ref
+        # A tag push builds exactly that tag; every other trigger (schedule,
+        # workflow_dispatch) builds the ref that triggered it. Checking out a
+        # fixed "latest tag" would silently build old code on every run.
         run: |
-          latest=$(git tag --list 'v*' --sort=-version:refname | head -1)
-          if [ -z "$latest" ]; then
-            echo "No 'v*' tag found. This workflow builds the latest release."
-            exit 1
+          if [[ "${{ github.ref_type }}" == tag ]]; then
+            echo "Building pushed tag: ${{ github.ref_name }}"
+          else
+            echo "Building ref: ${{ github.sha }}"
           fi
-          echo "Checking out latest tag: $latest"
-          git checkout "$latest"
+          git checkout --detach "${{ github.sha }}"
+          git log -1 --oneline
 
       - name: Prepare build
         id: prep

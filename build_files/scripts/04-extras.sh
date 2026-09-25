@@ -9,6 +9,11 @@ set -euxo pipefail
 echo "uninitialized" > /etc/machine-id
 ln -sfn /usr/share/zoneinfo/UTC /etc/localtime
 
+# lock the root account: this is a graphical image with greetd, there is no
+# legitimate console root login, and a known root password on a published
+# image is a straight escalation path. Recovery goes through the live image.
+passwd --lock root >/dev/null 2>&1 || true
+
 # re-enable pacman network sandbox
 sed -i '/DisableSandboxNetwork/d' /etc/pacman.conf
 
@@ -47,8 +52,13 @@ ln -sfnT /usr/lib/os-release /etc/os-release
 install -d /usr/lib/tartaria
 printf '%s\n' "$IMAGE_VARIANT" >/usr/lib/tartaria/variant
 
-# install default icon theme
-retry git clone --depth 1 https://github.com/vinceliuice/MacTahoe-icon-theme
+# install default icon theme, pinned so the same commit always yields the
+# same icons
+MACTAHOE_REPO="https://github.com/vinceliuice/MacTahoe-icon-theme"
+MACTAHOE_COMMIT="839848b9a8a38a92a6936e30c4abe35cc6f2546d"
+retry git clone --no-checkout --filter=blob:none "$MACTAHOE_REPO"
+git -C MacTahoe-icon-theme fetch --depth 1 origin "$MACTAHOE_COMMIT"
+git -C MacTahoe-icon-theme checkout --detach "$MACTAHOE_COMMIT"
 bash ./MacTahoe-icon-theme/install.sh -t grey -n default-icons -d /usr/share/icons
 rm -rf MacTahoe-icon-theme
 

@@ -68,3 +68,11 @@ generate-bootable-image base_dir=base_dir filesystem=filesystem:
         fallocate -l 50G "${base_dir}/bootable.img"
     fi
     just bootc install to-disk --composefs-backend --via-loopback /data/bootable.img --filesystem "${filesystem}" --wipe --bootloader systemd
+
+# re-resolve the pinned base image digests from their registries
+refresh-pins:
+    ./build_files/images/refresh-pins.sh
+
+# fail if any pinned base image has moved since the pins were last refreshed
+check-pins:
+    ./build_files/images/refresh-pins.sh --check

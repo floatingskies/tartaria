@@ -8,4 +8,6 @@ Target = *
 Description = Cleaning up package cache...
 Depends = coreutils
 When = PostTransaction
-Exec = /usr/bin/rm -rf /var/cache/pacman/pkg
+# 00-base.sh relocates the package cache to /usr/lib/sysimage and repoints
+# CacheDir at it, so the original /var/cache/pacman/pkg no longer exists
+Exec = /usr/bin/rm -rf /usr/lib/sysimage/cache/pacman/pkg
