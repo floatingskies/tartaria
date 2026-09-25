@@ -55,11 +55,18 @@ runs:
           type=raw,value=${{ inputs.image-flavor }}-{{date 'YYYYMMDD'}}
           type=sha,enable=${{ github.event_name == 'pull_request' }}
           type=ref,event=pr
+        # The license is GPL-3.0-only: that is what LICENSE contains and what
+        # every source file declares with an SPDX header. It used to say
+        # Apache-2.0 here, which contradicted both. The OCI label is set
+        # explicitly rather than left to be inherited, because the base image
+        # carries its own org.opencontainers.image.licenses and that value
+        # says nothing about this project.
         labels: |
           io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
           org.opencontainers.image.created=${{ steps.date.outputs.date }}
           org.opencontainers.image.description=${{ env.IMAGE_DESC }}
           org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+          org.opencontainers.image.licenses=GPL-3.0-only
           org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile
           org.opencontainers.image.title=${{ env.IMAGE_NAME }}
           org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
@@ -67,7 +74,7 @@ runs:
           org.opencontainers.image.version=${{ inputs.default-tag }}.{{date 'YYYYMMDD'}}
           io.artifacthub.package.deprecated=false
           io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
-          io.artifacthub.package.license=Apache-2.0
+          io.artifacthub.package.license=GPL-3.0-only
           io.artifacthub.package.logo-url=${{ env.IMAGE_LOGO_URL }}
           io.artifacthub.package.prerelease=false
           containers.bootc=1
