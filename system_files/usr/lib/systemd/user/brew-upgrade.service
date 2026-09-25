@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Runs as the logged-in user rather than as the hardcoded uid 1000 the
+# upstream unit ships with.
+
+[Unit]
+Description=Upgrade Homebrew packages
+Documentation=https://docs.brew.sh/Manpage
+After=network-online.target
+RequiresMountsFor=/home/linuxbrew
+ConditionPathIsSymbolicLink=/home/linuxbrew/.linuxbrew/bin/brew
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tartaria-brew upgrade

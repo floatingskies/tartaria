@@ -1,6 +1,6 @@
 [Unit]
 Description=Bind mount for /usr/share/tartaria/cherries
-ConditionPathExists=/etc/.cherries-are-picked
+ConditionPathExists=/var/lib/tartaria/cherries-are-picked
 ConditionPathExists=/var/lib/cherries
 ConditionKernelCommandLine=!rd.live.image
 DefaultDependencies=no

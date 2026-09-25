@@ -5,7 +5,7 @@ echo "::group::===========================> Configure system"
 
 # setup
 source /config/00-functions
-set -ouex pipefail
+set -euxo pipefail
 
 # system
 systemctl enable \
@@ -53,23 +53,25 @@ systemctl preset \
 
 # user
 systemctl --global enable \
+    brew-update.timer \
+    brew-upgrade.timer \
     chezmoi-init.service \
     chezmoi-update.timer \
     enable-flathub-repo.service \
     noctalia-shell.service \
     refresh-font-cache.service \
-    subsystem-containerd.service \
     udiskie.service \
     wl-clip-persist.service
-    
+
 # user-preset
 systemctl preset --global \
+    brew-update.timer \
+    brew-upgrade.timer \
     chezmoi-init.service \
     chezmoi-update.timer \
     enable-flathub-repo.service \
     noctalia-shell.service \
     refresh-font-cache.service \
-    subsystem-containerd.service \
     udiskie.service \
     wl-clip-persist.service
 

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The upstream timer is a system timer driving a service that hardcodes uid
+# 1000; this one is a user timer, so it runs as whoever is logged in.
+
+[Unit]
+Description=Timer for the Homebrew upgrade service
+Wants=network-online.target
+After=network-online.target
+
+[Timer]
+OnBootSec=30min
+OnUnitInactiveSec=8h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

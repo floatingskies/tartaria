@@ -11,30 +11,36 @@ if [[ "$EUID" == "0" ]] || [[ "$EUID" -lt "1000" ]]; then
 fi
 
 ## set constants
-HASH=$(echo -n "$(cat /etc/machine-id)$USER" | sha256sum | awk '{print $1}')
+HASH=$(printf '%s%s' "$(</etc/machine-id)" "$USER" | sha256sum | awk '{print $1}')
 RTMEDIR="$HOME/.cache/subsystem-$HASH"
 readonly HASH
 readonly RTMEDIR
 
 ## source configured host lang
-source /etc/locale.conf
-readonly LANG
+if [[ -r /etc/locale.conf ]]; then
+    source /etc/locale.conf
+fi
+readonly LANG="${LANG:-C.UTF-8}"
 
 ## utilities
+filesystemd_state() {
+    systemctl --user is-active subsystem-filesystemd.service 2>/dev/null || true
+}
+
 start-subsystem() {
     # trap ERR, SIGTERM
     trap 'echo "[!!!] Something went wrong during startup, aborting." && return 1' ERR
     trap 'echo "[!!!] Received SIGTERM, aborting." && return 0' SIGTERM
 
     # check if filesystemd is still starting; if so, wait
-    if [[ "$(systemctl --user is-failed subsystem-filesystemd)" == "activating" ]]; then
+    if [[ "$(filesystemd_state)" == "activating" ]]; then
         echo "[-i-] subsystem-filesystemd has not finished startup, waiting."
 
-        while [[ "$(systemctl --user is-failed subsystem-filesystemd)" == "activating" ]]; do
+        while [[ "$(filesystemd_state)" == "activating" ]]; do
             sleep 1
         done
         
-        if [[ "$(systemctl --user is-failed subsystem-filesystemd)" != "active" ]]; then
+        if [[ "$(filesystemd_state)" != "active" ]]; then
             echo "[!!!] subsystem-filesystemd has failed to start."
         fi
     fi
@@ -103,6 +109,8 @@ podman-cmd() {
         --log-driver journald \
         --env "LANG=$LANG" \
         --env "SUBSYSTEM_USER=$USER" \
+        --env "SUBSYSTEM_UID=$UID" \
+        --env "SUBSYSTEM_GID=$(id -g)" \
         --network host \
         --user 0:0 \
         --userns keep-id \

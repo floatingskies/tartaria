@@ -1,0 +1,243 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Host-side entrypoint for interacting with the mutable subsystem.
+# Everything in here runs on the immutable host, never inside the subsystem.
+
+# set errexit, nounset, pipefail, errtrace
+set -eEuo pipefail
+
+# set constants
+readonly PROGNAME="synergy"
+readonly SUBSYS_LIB="/usr/lib/subsystem"
+readonly VARIANT_FILE="/usr/lib/tartaria/variant"
+readonly REGISTRY="ghcr.io/tartaria-dev/tartaria"
+
+# utilities
+die() {
+    echo "[!!!] $*" >&2
+    exit 1
+}
+
+# keep in sync with subsystem-containerd and subsystem-filesystemd
+subsys_id() {
+    printf '%s%s' "$(</etc/machine-id)" "$USER" | sha256sum | awk '{print $1}'
+}
+
+# report the variant of this installation
+variant() {
+    if [[ -r "$VARIANT_FILE" ]]; then
+        cat "$VARIANT_FILE"
+    else
+        echo unknown
+    fi
+}
+
+usage() {
+    cat <<EOF
+usage:
+    $PROGNAME [options...] <command> [arguments...]
+
+synopsis:
+    interact with the mutable subsystem, or with the immutable host
+
+commands:
+    shell [command...]   enter the mutable subsystem, or run a command within it
+    host [command...]    start a login shell on the immutable host, or run a command there
+    status               report the state of the mutable subsystem
+    rebase               switch this installation to a different Tartaria variant
+    help                 show this help message
+
+options:
+    -h, --help           show this help message
+    -H, --host <cmd>     run a command on the immutable host
+    -V, --version        show the variant of this installation
+
+Unrecognized first arguments are treated as a command to run on the host,
+e.g. "$PROGNAME echo hello" is equivalent to "$PROGNAME host echo hello".
+EOF
+}
+
+# report subsystem state
+cmd_status() {
+    local state container
+
+    container="subsystem-$(subsys_id)"
+    state=$(systemctl --user is-active subsystem-containerd.service 2>/dev/null || true)
+
+    echo "variant:      $(variant)"
+    echo "shell:        ${SHELL:-unknown}"
+    echo "subsystem:    ${state:-unknown}"
+    echo "container:    $container"
+
+    if [[ "$state" == "active" ]] && podman container exists "$container"; then
+        echo "subsystem id: $(podman container inspect --format '{{.Id}}' "$container")"
+    fi
+
+    if [[ "$state" != "active" ]]; then
+        echo
+        echo "[-i-] Start it with: $PROGNAME shell"
+        echo "[-i-] Logs: journalctl --user -xeu subsystem-containerd"
+    fi
+}
+
+# bring the subsystem up, it is not started at login on purpose
+ensure_subsystem() {
+    local state
+
+    state=$(systemctl --user is-active subsystem-containerd.service 2>/dev/null || true)
+    if [[ "$state" == "active" ]]; then
+        return 0
+    fi
+
+    if [[ "$state" == "failed" ]]; then
+        systemctl --user reset-failed subsystem-containerd.service
+    fi
+
+    echo "[-i-] Starting your subsystem, this can take a moment..."
+    if ! systemctl --user start subsystem-containerd.service; then
+        die "Your subsystem failed to start, see: journalctl --user -xeu subsystem-containerd"
+    fi
+}
+
+# enter the mutable subsystem, or run a single command within it
+cmd_shell() {
+    local container
+
+    if [[ "$EUID" == "0" ]] || [[ "$EUID" -lt "1000" ]]; then
+        die "Please do not run this as an administrator or system user."
+    fi
+
+    ensure_subsystem
+
+    # hand off to the subsystem shell, which owns startup and fallback handling
+    if [[ "$#" -eq 0 ]]; then
+        exec "$SUBSYS_LIB/bin/shell" "${TERM:-xterm-256color}"
+    fi
+
+    container="subsystem-$(subsys_id)"
+    if ! podman container exists "$container"; then
+        die "Subsystem container '$container' does not exist."
+    fi
+
+    podman exec -u "$(id -u)" -it -e "TERM=${TERM:-xterm-256color}" "$container" "$@"
+}
+
+# the login shell of this user, as the host has it configured
+login_shell() {
+    local shell
+
+    shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)
+    if [[ -n "$shell" && -x "$shell" && "$shell" != /usr/sbin/nologin && "$shell" != /bin/false ]]; then
+        printf '%s' "$shell"
+    else
+        printf '%s' "${SHELL:-/bin/bash}"
+    fi
+}
+
+# enter a login shell on the immutable host, or run a command there
+cmd_host() {
+    if [[ "$#" -eq 0 ]]; then
+        exec "$(login_shell)" -l
+    fi
+
+    exec "$@"
+}
+
+# switch this installation to a different variant of the same channel and layout
+cmd_rebase() {
+    local -a variants=()
+    local -a editions=(arch cachy)
+    local -a flavors=(berbere amchoor)
+    local current channel layout edition flavor answer target
+
+    current=$(variant)
+    [[ "$current" == "unknown" ]] && die "Unable to determine the current variant."
+
+    # the first field is the channel, the last field describes the layout
+    channel="${current%%-*}"
+    layout="${current##*-}"
+
+    case "$layout" in
+        berbere|amchoor) ;;
+        *)
+            die "Sealed variants cannot be rebased, reinstall from an ISO instead."
+            ;;
+    esac
+
+    # sealed layouts are ISO-only, so only the nonsealed ones are offered
+    for edition in "${editions[@]}"; do
+        for flavor in "${flavors[@]}"; do
+            variants+=("${channel}-${edition}-${flavor}")
+        done
+    done
+
+    echo "[---] Current variant: $current"
+    echo
+    for answer in "${!variants[@]}"; do
+        if [[ "${variants[$answer]}" == "$current" ]]; then
+            printf "[-%d-] %s (current)\n" "$((answer + 1))" "${variants[$answer]}"
+        else
+            printf "[-%d-] %s\n" "$((answer + 1))" "${variants[$answer]}"
+        fi
+    done
+    echo
+    read -r -p "[-?-] Enter the number of the variant to switch to (or press enter to cancel): " answer
+    answer="${answer//[!0-9]/}"
+    if [[ -z "$answer" ]] || (( answer < 1 || answer > ${#variants[@]} )); then
+        die "Nothing selected, aborting."
+    fi
+
+    target="${REGISTRY}:${variants[$((answer - 1))]}"
+    echo
+    echo "[---] Switching to $target"
+    echo "[-i-] Your current deployment stays available for rollback until you reboot."
+    echo
+
+    read -r -p "[-?-] Continue? [y/N]: " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || die "Nothing changed, aborting."
+
+    bootc switch "$target"
+    echo
+    echo "[-i-] Reboot into the new deployment to finish the rebase."
+}
+
+# main logic
+main() {
+    if [[ "$#" -eq 0 ]]; then
+        usage
+        exit 1
+    fi
+
+    case "$1" in
+        -h|--help|help)
+            usage
+            ;;
+        -V|--version|version)
+            variant
+            ;;
+        shell)
+            shift
+            cmd_shell "$@"
+            ;;
+        -H|--host|host)
+            shift
+            cmd_host "$@"
+            ;;
+        status)
+            shift
+            [[ "$#" -eq 0 ]] || die "Unknown arguments: $*"
+            cmd_status
+            ;;
+        rebase)
+            shift
+            [[ "$#" -eq 0 ]] || die "Unknown arguments: $*"
+            cmd_rebase
+            ;;
+        *)
+            cmd_host "$@"
+            ;;
+    esac
+}
+
+main "$@"

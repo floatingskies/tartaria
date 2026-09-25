@@ -1,29 +1,48 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-only
 
-# love meeeeeeee
+## set errexit & pipefail
 set -eo pipefail
 
-# trap EXIT
-trap 'echo "[!!!] Something went wrong."' EXIT
-
-# check if we aren't root
+## do our checks
 if [[ "$EUID" != "0" ]]; then
     echo "[!!!] Please run this as an administrator."
     exit 77
 fi
 
+## set constants
+IMAGE="ghcr.io/tartaria-dev/cherries:latest"
+TARGET="/var/lib/cherries"
+STAMP="/var/lib/tartaria/cherries-are-picked"
+readonly IMAGE
+readonly TARGET
+readonly STAMP
+
+## utilities
+on_error() {
+    echo "[!!!] Something went wrong while updating the chezmoi dotfiles."
+}
+trap on_error ERR
+
+# the image is the source of truth, always leave it how we found it
+trap 'podman image unmount "$IMAGE" >/dev/null 2>&1 || true' EXIT
+
+## main logic
+
 # pull and mount image
 echo "[1/3] Fetching dotfile repository."
-podman pull ghcr.io/tartaria-dev/cherries:latest -q
-MNT=$(podman image mount ghcr.io/tartaria-dev/cherries:latest)
+podman pull "$IMAGE" -q
+MNT=$(podman image mount "$IMAGE")
 
-# copy over files
+# copy over files, the image is rooted at dot_config/ and friends
 echo "[2/3] Syncing fetched copy of repository with local copy."
-mkdir -p /var/lib/cherries
-rsync -avH --delete "$MNT"/system_files/ /var/lib/cherries/
+install -d -m 0755 "$TARGET"
+rsync -aH --delete "$MNT"/ "$TARGET"/
 
 # cleanup
 echo "[3/3] Cleaning up."
-podman image unmount ghcr.io/tartaria-dev/cherries:latest
-touch /etc/.cherries-are-picked
+install -d -m 0755 "$(dirname "$STAMP")"
+touch "$STAMP"
+
+# pick up the new copy without waiting for a reboot
+systemctl try-restart usr-share-tartaria-cherries.mount || true

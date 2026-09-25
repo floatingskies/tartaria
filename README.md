@@ -16,6 +16,26 @@ Tartaria is a custom Arch/CachyOSv3 bootc image built for (optimized) general-da
 The name is inspired by my favorite species of cherries, the [Black Tartarian](https://shop.arborday.org/treeguide/210) species - tender, juicy, and sweet.
 
 
+## Shells
+
+Tartaria is split in two, and `synergy` is what connects them.
+
+Your login shell is the **immutable host**, and it stays that way unless you ask for something else. That is the whole point of a bootc image: the system is updated atomically as a whole, and no package transaction you can start by accident will touch it.
+
+The **mutable subsystem** is a per-user Podman container that borrows the host's `/usr` but owns its own `/etc`, `/var` and home-local state. Install what you like in there, tweak the dotfiles, and nothing about it can damage the host. It is started on demand, never at login.
+
+```
+synergy status               # which variant, which shell, is the subsystem running
+synergy shell                # drop into the mutable subsystem's fish
+synergy shell htop           # run a single command inside the subsystem
+synergy --host               # explicitly go back to the immutable host
+synergy htop                 # any unknown command runs on the host
+synergy rebase               # switch to another variant, then reboot
+```
+
+`fish` is the default shell for new users, and [Atuin](https://atuin.sh/) keeps your shell history on the host, shared with the subsystem.
+
+
 ## Variants
 
 In total, there are sixteen variants of Tartaria.
@@ -78,7 +98,9 @@ rpm-ostree rebase ostree-unverified-registry:ghcr.io/tartaria-dev/tartaria:<vari
 
 ### Notes
 
-If after installation you don't like the variant you chose, run `synergy rebase` in the terminal and go through the selection process.
+If after installation you don't like the variant you chose, run `synergy rebase` in the terminal and go through the selection process. Rebasing keeps your current deployment available for rollback until you reboot, so reboot into the new deployment when it is done.
+
+Rebasing is only offered between **nonsealed** variants of the same channel. Sealed variants must be reinstalled from an ISO.
 
 Refer to the [Variants](https://github.com/tartaria-dev/tartaria#Variants) section above for choosing a variant.
 

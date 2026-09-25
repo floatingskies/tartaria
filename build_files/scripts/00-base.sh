@@ -5,7 +5,7 @@ echo "::group::===========================> Prepare image build"
 
 # setup
 source /config/00-functions
-set -oux pipefail
+set -uxo pipefail
 
 # create build log dir
 mkdir -p /tmp/build

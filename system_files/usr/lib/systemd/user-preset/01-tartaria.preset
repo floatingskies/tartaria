@@ -1,9 +1,10 @@
+enable brew-update.timer
+enable brew-upgrade.timer
 enable chezmoi-init.service
 enable chezmoi-update.timer
 enable enable-flathub-repo.service
 enable iio-niri.service
 enable noctalia-shell.service
 enable refresh-font-cache.service
-enable subsystem-containerd.service
 enable udiskie.service
 enable wl-clip-persist.service

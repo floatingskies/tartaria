@@ -1,0 +1,96 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Homebrew service helper.
+#
+# The upstream brew image hardcodes uid 1000 and assumes a fixed install path.
+# Tartaria hands out whatever uid the installer created, so the setup and the
+# update/upgrade services go through this helper instead.
+
+## set constants
+readonly PREFIX="/home/linuxbrew/.linuxbrew"
+readonly TARBALL="/usr/share/homebrew.tar.zst"
+readonly STAMP="/etc/.linuxbrew"
+
+## utilities
+die() {
+    echo "[!!!] $*" >&2
+    exit 1
+}
+
+# the first regular user of this installation, if there is one yet
+brew_user() {
+    getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && ($6 ~ /^\/var\/home\// || $6 ~ /^\/home\//) { print $1; exit }'
+}
+
+# run brew with a predictable environment
+brew() {
+    env \
+        HOMEBREW_PREFIX="$PREFIX" \
+        HOMEBREW_CELLAR="$PREFIX/Cellar" \
+        HOMEBREW_REPOSITORY="$PREFIX/Homebrew" \
+        HOMEBREW_NO_ANALYTICS=1 \
+        HOMEBREW_NO_ENV_HINTS=1 \
+        "$PREFIX/bin/brew" "$@"
+}
+
+# unpack the image-provided Homebrew and hand it to the local user
+brew_setup() {
+    local user
+
+    if [[ -d "$PREFIX" ]]; then
+        echo "[-i-] Homebrew is already installed."
+        return 0
+    fi
+
+    # without a user there is nobody to own the install, so try again next boot
+    user=$(brew_user)
+    if [[ -z "$user" ]]; then
+        echo "[-i-] No regular user found yet, deferring Homebrew setup to the next boot."
+        return 0
+    fi
+
+    echo "[1/4] Extracting Homebrew."
+    rm -rf /tmp/homebrew
+    mkdir -p /tmp/homebrew /home/linuxbrew
+    tar --zstd -xf "$TARBALL" -C /tmp/homebrew
+
+    echo "[2/4] Installing Homebrew to $PREFIX."
+    cp -R -n /tmp/homebrew/home/linuxbrew/.linuxbrew /home/linuxbrew
+
+    echo "[3/4] Handing Homebrew over to $user."
+    chown -R "$user:$(id -gn "$user")" /home/linuxbrew
+
+    echo "[4/4] Marking Homebrew as set up."
+    rm -rf /tmp/homebrew
+    touch "$STAMP"
+}
+
+# keep the Homebrew installation itself up to date
+brew_update() {
+    brew update
+}
+
+# upgrade everything Homebrew manages
+brew_upgrade() {
+    # Homebrew refuses to run unattended upgrades that need a formula's licence
+    NONINTERACTIVE=1 brew upgrade
+}
+
+## main logic
+case "${1:-}" in
+    setup)
+        brew_setup
+        ;;
+    update)
+        [[ "$EUID" != "0" ]] || die "Homebrew must not be run as root."
+        brew_update
+        ;;
+    upgrade)
+        [[ "$EUID" != "0" ]] || die "Homebrew must not be run as root."
+        brew_upgrade
+        ;;
+    *)
+        die "usage: ${0##*/} {setup|update|upgrade}"
+        ;;
+esac

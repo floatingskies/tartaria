@@ -30,6 +30,7 @@ lsof
 man-db
 nano
 openssh
+openssl
 powertop
 python3
 reflector
@@ -37,6 +38,8 @@ rsync
 tar
 unzip
 vim
+xz
+zstd
 nvim
 wget
 

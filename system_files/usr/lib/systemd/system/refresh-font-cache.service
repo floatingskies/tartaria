@@ -4,7 +4,7 @@ RequiresMountsFor=/var
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/fc-cache -rsfv
+ExecStart=/usr/bin/fc-cache -r -f -s -v
 ExecStart=/usr/bin/systemctl disable %n
 ExecStart=/usr/bin/systemctl mask %n
 RemainAfterExit=false

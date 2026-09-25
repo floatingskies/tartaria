@@ -24,12 +24,30 @@ synopsis:
 
 options:
     -h, --help                      show this help message
+    -H, --host                      return to a login shell on the host system
     -r, --root                      execute <command> as root, requires user authentication
     -l, --link                      link a command from the host
-    -u, --unlink                    unlink a command linked from the host                        
+    -u, --unlink                    unlink a command linked from the host
 
 unrecognized options will be treated as a string to execute on the host within a seperate bash shell, e.g. "echo foo"
 EOF
+}
+
+# resolve the login shell of this user, as configured on the host
+login_shell() {
+    local shell
+
+    shell=$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)
+    if [[ -n "$shell" && "$shell" != /usr/sbin/nologin && "$shell" != /bin/false ]]; then
+        printf '%s' "$shell"
+    else
+        printf '%s' /usr/bin/fish
+    fi
+}
+
+# run a string on the host inside a dedicated bash shell
+host_shell() {
+    /usr/libexec/host-spawn /usr/bin/bash -c "$*"
 }
 
 # iterate through args
@@ -37,6 +55,17 @@ case $1 in
     -h|--help)
         # help msg
         help
+        ;;
+    -H|--host)
+        # shift args
+        shift
+
+        # return to a host login shell, or run the provided command there
+        if [[ -z "$*" ]]; then
+            /usr/libexec/host-spawn "$(login_shell)" -l
+        else
+            host_shell "$@"
+        fi
         ;;
     -r|--root)
         # shift args
@@ -50,8 +79,7 @@ case $1 in
         fi
 
         # execute cmd as root
-        # shellcheck disable=SC2068
-        /usr/libexec/host-spawn pkexec $@
+        /usr/libexec/host-spawn pkexec /usr/bin/bash -c "$*"
         ;;
     -l|--link)
         # shift args
@@ -62,14 +90,16 @@ case $1 in
             echo "[!!!] No command to link provided."
             help
             exit 1
-        elif ! /usr/libexec/host-spawn which "$1" >/dev/null; then
-            echo "[!!!] Command $1 not found."
+        elif ! /usr/libexec/host-spawn which "$1" >/dev/null 2>&1; then
+            echo "[!!!] Command $1 not found on the host."
             exit 1
-        elif [[ $(realpath /usr/bin/"$1") == /usr/libexec/host-spawn ]]; then
-            echo "[!!!] Command $1 is already linked."
-            exit 1
-        elif command -v "$1" >/dev/null 2>&1; then
-            echo "[!!!] Command $1 already exists."
+        elif [[ -e /usr/bin/"$1" || -e /usr/local/bin/"$1" ]]; then
+            if [[ "$(readlink -f "/usr/bin/$1" 2>/dev/null || true)" == "/usr/libexec/host-spawn" ]] \
+                || [[ "$(readlink -f "/usr/local/bin/$1" 2>/dev/null || true)" == "/usr/libexec/host-spawn" ]]; then
+                echo "[!!!] Command $1 is already linked."
+            else
+                echo "[!!!] Command $1 already exists."
+            fi
             exit 1
         fi
 
@@ -87,7 +117,8 @@ case $1 in
             echo "[!!!] No command to unlink provided."
             help
             exit 1
-        elif [[ $(realpath /usr/local/bin/"$1") != /usr/libexec/host-spawn ]]; then
+        elif [[ ! -e /usr/local/bin/"$1" ]] \
+            || [[ "$(readlink -f "/usr/local/bin/$1" 2>/dev/null || true)" != "/usr/libexec/host-spawn" ]]; then
             echo "[!!!] Command $1 isn't linked."
             exit 1
         fi
@@ -106,7 +137,6 @@ case $1 in
         fi
 
         # execute cmd normally
-        # shellcheck disable=SC2068
-        /usr/libexec/host-spawn $@
+        host_shell "$@"
         ;;
 esac

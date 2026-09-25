@@ -10,27 +10,69 @@ elif [[ ! -f /run/.containerenv ]]; then
 	exit 64
 fi
 
+# do our other checks
+if [[ -z "$SUBSYSTEM_USER" || -z "$SUBSYSTEM_UID" || -z "$SUBSYSTEM_GID" ]]; then
+    echo "[!!!] Subsystem user information is missing, aborting."
+    exit 78
+fi
+
 # logging
 echo "[---] Starting up."
 
+# utilities
+install_file() {
+    # write stdin to a path atomically, so readers never observe a partial file
+    local path="$1" mode="$2"
+    local tmp
+
+    tmp=$(mktemp "${path}.XXXXXX")
+    cat >"$tmp"
+    chmod "$mode" "$tmp"
+    mv -f "$tmp" "$path"
+}
+
+append_line() {
+    # append a line to a file atomically, preserving its contents and mode
+    local path="$1" line="$2"
+    local tmp="${path}.new"
+
+    cp -a "$path" "$tmp"
+    printf '%s\n' "$line" >>"$tmp"
+    chmod --reference="$path" "$tmp"
+    chown --reference="$path" "$tmp"
+    mv -f "$tmp" "$path"
+}
+
+## 1. the operational user must exist for sudo, su, and home lookup to work
+echo "[1/5] Configuring the operational user."
+if ! getent passwd "$SUBSYSTEM_USER" >/dev/null; then
+    if getent passwd "$SUBSYSTEM_UID" >/dev/null; then
+        echo "[!!!] UID $SUBSYSTEM_UID is already taken inside this subsystem, aborting."
+        exit 78
+    fi
+
+    append_line /etc/passwd \
+        "${SUBSYSTEM_USER}:x:${SUBSYSTEM_UID}:${SUBSYSTEM_GID}:Subsystem User:/home/${SUBSYSTEM_USER}:/usr/bin/fish"
+
+    if ! getent group "$SUBSYSTEM_GID" >/dev/null; then
+        append_line /etc/group "${SUBSYSTEM_USER}:x:${SUBSYSTEM_GID}:"
+    fi
+fi
+
 # set up sudo for the user
-echo "[1/5] Configuring sudo."
-if [[ ! -f /etc/sudoers.d/nopasswd-for-subsystem ]]; then
-    mkdir -p /etc/sudoers.d
-	echo "$SUBSYSTEM_USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/nopasswd-for-subsystem
+echo "[2/5] Configuring sudo."
+mkdir -p /etc/sudoers.d
+echo "$SUBSYSTEM_USER ALL=(ALL) NOPASSWD: ALL" | install_file /etc/sudoers.d/nopasswd-for-subsystem 440
+if ! visudo -cf /etc/sudoers.d/nopasswd-for-subsystem >/dev/null; then
+    echo "[!!!] Generated sudoers configuration is invalid, aborting."
+    exit 78
 fi
 
 # add shell settings
-echo "[2/5] Configuring shell."
+echo "[3/5] Configuring shell."
 mkdir -p /etc/fish/conf.d
-cat <<EOF >> /etc/fish/conf.d/startup.fish
-alias fastfetch="fastfetch --logo /usr/share/tartaria/ascii-logo/logo.txt"
-alias neofetch="fastfetch --logo /usr/share/tartaria/ascii-logo/logo.txt"
-alias hyfetch="fastfetch --logo /usr/share/tartaria/ascii-logo/logo.txt"
-
+cat <<'EOF' | install_file /etc/fish/conf.d/10-subsystem.fish 644
 if status is-interactive
-    atuin init fish | source
-
     if not test -f ~/.config/subsystem/suppress-notice
         echo "Hello there!"
         echo
@@ -42,6 +84,9 @@ if status is-interactive
         echo "Some commands are also linked into this container from the host by default for your convenience:"
         echo "distrobox podman flatpak niri noctalia systemctl journalctl"
         echo
+        echo "To return to a login shell on the host, run:"
+        echo "synergy --host"
+        echo
         echo "To suppress this lovely notice, execute:"
         echo "touch ~/.config/subsystem/suppress-notice"
         echo
@@ -50,20 +95,26 @@ end
 EOF
 
 # link default commands
-echo "[3/5] Linking default commands."
-for cmd in distrobox-* distrobox podman flatpak niri noctalia systemctl journalctl; do rm -f /usr/bin/$cmd; ln -sT /usr/libexec/host-spawn /usr/bin/"$cmd"; done
+echo "[4/5] Linking default commands."
+for cmd in distrobox-* distrobox podman flatpak niri noctalia systemctl journalctl; do
+    [[ -e /usr/bin/"$cmd" || -L /usr/bin/"$cmd" ]] || continue
+    [[ "$(readlink -f "/usr/bin/$cmd" 2>/dev/null || true)" == "/usr/libexec/host-spawn" ]] && continue
+    rm -f /usr/bin/"$cmd"
+    ln -sT /usr/libexec/host-spawn /usr/bin/"$cmd"
+done
 
 # source user configs
-echo "[4/5] Sourcing user configurations."
+echo "[5/5] Sourcing user configurations."
 if [[ -d /home/"$SUBSYSTEM_USER"/.config/ignition.d/ ]]; then
 	for script in /home/"$SUBSYSTEM_USER"/.config/ignition.d/*.sh; do
+		[[ -e "$script" ]] || continue
 		echo "[i] Sourcing script $script."
 		. "$script" || true
 	done
 fi
 
 # attempt to configure fastest arch repos
-echo "[5/5] Configuring repositories."
+echo "[---] Configuring repositories."
 reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist >/dev/null 2>&1 || true
 
 # keep subsystem alive

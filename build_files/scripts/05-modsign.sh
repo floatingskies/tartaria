@@ -5,26 +5,31 @@ echo "::group::===========================> Sign NVIDIA modules"
 
 # setup
 source /config/00-functions
-set -ouex pipefail
+set -euxo pipefail
 
 # if image spice is not saffron, skip
 if [[ "$IMAGE_FLAVOR" != *saffron ]]; then
     echo "Skipping, image spice is not 'saffron'."
+    echo "::endgroup::"
     exit 0
 fi
 
 # set kernel version
-KERNEL_VERSION="$(basename "$(find /usr/lib/modules -maxdepth 1 -type d | grep -v -E "\.img$" | tail -n 1)")"
+KERNEL_VERSION="$(kernel_version)"
 
-# define headers package
-case "$IMAGE_FLAVOR" in
-    arch*)  
-        headers="linux-headers"
-        ;;
-    cachy*)
-        headers="linux-cachyos-bore-headers"
-        ;;
-esac
+# the headers package always follows the kernel package
+headers=""
+if [[ -r /usr/lib/tartaria/kernel-info ]]; then
+    # shellcheck source=/dev/null
+    source /usr/lib/tartaria/kernel-info
+    headers="$KERNEL_HEADERS"
+else
+    case "$IMAGE_FLAVOR" in
+        arch*)  headers="linux-headers" ;;
+        cachy*) headers="linux-cachyos-bore-headers" ;;
+    esac
+    echo "[!!!] No kernel info recorded, assuming $headers." >&2
+fi
 
 # install headers
 retry pacman -S --noconfirm --needed "$headers"
