@@ -107,16 +107,50 @@ if [[ -e /etc/systemd/user/subsystem-containerd.service \
     fi
 fi
 
-# an enabled unit whose ExecStart target does not exist fails at boot, not at
-# build time
+# a unit whose ExecStart target does not exist fails at boot, not at build time
+#
+# systemd lets the executable carry a prefix that changes how it is run, so a
+# bare "ExecStart=" match drops everything: "-" and "@" ignore failure, "+"
+# raises privileges, "!" runs in a namespace. The prefix has to be stripped
+# before the path is tested, or those units silently escape the check.
 while IFS= read -r path; do
     [[ -n "$path" ]] || continue
-    [[ -e "$path" ]] || fail "enabled unit points at a missing executable: ${path}"
+    [[ -e "$path" ]] || fail "unit points at a missing executable: ${path}"
 done < <(
-    grep -rhoE '^ExecStart=.*' /usr/lib/systemd/system /etc/systemd/system 2>/dev/null \
-        | sed -E 's|^ExecStart=[^ ]* *||; s|^-[a-zA-Z]+ *||' \
-        | awk '{print $1}' | grep '^/' | sort -u
+    grep -rhoE '^ExecStart=[^[:space:]]+' /usr/lib/systemd/system /etc/systemd/system 2>/dev/null \
+        | sed -E 's|^ExecStart=||' \
+        | sed -E 's|^[-+@!]+||' \
+        | grep '^/' | sort -u
 )
+
+## default shell and home
+
+# Nothing in the image creates a user: the greeter is a login screen, not a
+# setup flow. Whoever does it has to land on fish in /var/home, and that comes
+# from these two values, so they are checked rather than assumed.
+if [[ -r /etc/default/useradd ]]; then
+    grep -qx 'SHELL=/usr/bin/fish' /etc/default/useradd \
+        || fail "/etc/default/useradd does not default new users to fish: \
+$(grep -E '^SHELL=' /etc/default/useradd || echo 'SHELL is unset')"
+    grep -qx 'HOME=/var/home' /etc/default/useradd \
+        || fail "/etc/default/useradd does not default new users to /var/home"
+    grep -qx 'SKEL=/etc/skel' /etc/default/useradd \
+        || fail "/etc/default/useradd does not point SKEL at /etc/skel"
+else
+    fail "/etc/default/useradd is missing"
+fi
+
+[[ -s /usr/bin/fish ]] || fail "fish is not installed but is the default shell"
+[[ -d /etc/skel/.config/fish ]] || fail "skel has no fish configuration"
+
+## bootloader chain
+
+# the sealed images copy shim out of this package; if it did not build, the
+# UKI is produced and the machine still cannot boot
+if [[ "$IMAGE_VARIANT" == *maraska || "$IMAGE_VARIANT" == *saffron ]]; then
+    [[ -f /usr/share/shim-signed/shimx64.efi ]] \
+        || fail "shim-signed is missing; the sealed bootloader chain is incomplete"
+fi
 
 ## root account
 

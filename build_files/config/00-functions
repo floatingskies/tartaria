@@ -152,26 +152,3 @@ set_os_release() {
     grep -q '^VARIANT=' "$file" || printf 'VARIANT="%s"\n' "$variant" >>"$file"
     grep -q '^VARIANT_ID=' "$file" || printf 'VARIANT_ID="%s"\n' "$variant" >>"$file"
 }
-
-# enable_if_present <unit>...
-#
-# systemctl enable for units that this image actually ships. Units provided by
-# optional packages (bluetooth, cups, nvidia tooling) are absent on some
-# flavors, and a hard `systemctl enable` on a missing unit aborts the stage.
-# Missing optional units are reported, not silently ignored.
-enable_if_present() {
-    local unit="" missing=()
-
-    for unit in "$@"; do
-        if systemctl cat "$unit" >/dev/null 2>&1; then
-            systemctl enable "$unit"
-        else
-            missing+=("$unit")
-        fi
-    done
-
-    if (( ${#missing[@]} > 0 )); then
-        printf '[build-note] optional units not shipped by this image: %s\n' \
-            "${missing[*]}" >&2
-    fi
-}
