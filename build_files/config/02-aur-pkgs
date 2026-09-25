@@ -1,14 +1,50 @@
-bibata-cursor-theme
-bindfs
-darkly-qt6-git
-distroshelf
-fish-pure-prompt
-iio-niri
-maplemono-nf-unhinted
-maplemono-ttf
-matugen-git
-noctalia-greeter
-python-clickgen
-qt6ct-kde
-shim-signed
-valent
+# AUR packages, pinned by commit.
+#
+#   <repo>  <splits>  <commit>
+#
+# repo    the git repository to clone. For a split package this is the
+#         package base, not the individual package: AUR keeps the per-package
+#         repositories of a split empty and puts the real PKGBUILD in the base.
+# splits  comma-separated splits to install, or "-" for a package that is not
+#         split. makepkg has no option to build one split of a package base, so
+#         every split is built and only the ones named here are installed.
+# commit  the exact tree to build. AUR repositories are mutable and their
+#         PKGBUILDs run arbitrary code during the build, so the code that goes
+#         into an image has to be named here rather than tracked from a branch.
+#
+# Refresh with:
+#
+#   while read -r repo splits _; do
+#       [[ "$repo" == \#* || -z "$repo" ]] && continue
+#       printf '%s %s %s\n' "$repo" "$splits" \
+#           "$(git ls-remote "https://aur.archlinux.org/$repo.git" HEAD | cut -f1)"
+#   done < build_files/config/02-aur-pkgs
+#
+# Caveat: a package whose name ends in -git tracks an upstream git repository
+# that the PKGBUILD fetches at build time. Pinning the AUR commit pins the
+# recipe, not the upstream source, so those are not fully reproducible.
+#
+# Caveat: the packages listed here are pinned exactly, but when one of them
+# depends on another AUR package that is *not* on this list, that dependency is
+# resolved by yay at its branch head. Keep such dependencies on this list
+# wherever possible so they are pinned too.
+
+# repo                  splits                            commit
+# distroshelf has been dropped from the AUR database, but its git
+# repository is still reachable, so this pin still builds. It is unmaintained
+# and the repository will go away at some point, which will fail the build
+# with a clear 'not reachable' error rather than silently building something
+# else.
+bibata-cursor-theme    -                                 8b38756aa61bc7c782e41e117523c32ed6fdf57b
+bindfs                 -                                 6bf1d8bd4d1babe4cb8d81225fcdaf060f0bb2d1
+darkly-qt6-git         -                                 9976af55ca9a8c467464dc68030fee9605f11a29
+distroshelf            -                                 c6109ac56881e1c650741b88a648bc797d5d3256
+fish-pure-prompt       -                                 9d98bac8a059d5a02ac1483fad7a70ec895531d5
+iio-niri               -                                 daa5cb338ea2b238a545dc737c1b541456241054
+maplemono              maplemono-nf-unhinted,maplemono-ttf b3351f9c1fa14ad733f39733a398f1c838d66cb6
+matugen-git            -                                 75efd491543ee1550a37b9959793b0d4884e9415
+noctalia-greeter       -                                 67354e9a64f71313c9dd1ca59e0792bf908afc68
+python-clickgen        -                                 fc170b4cec33856710640c4bd665a017eca86bc0
+qt6ct-kde              -                                 8c1003e13b7e7545e717273e0716f095f195bd13
+shim-signed            -                                 2fb92b90a7b89c6f9807b4a1e92dedeec3803dcf
+valent                 -                                 86bbbc55cb0bcdfafa8b83f89e17ba7f73f24419
