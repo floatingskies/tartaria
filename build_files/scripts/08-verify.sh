@@ -128,17 +128,20 @@ done < <(
 # Nothing in the image creates a user: the greeter is a login screen, not a
 # setup flow. Whoever does it has to land on fish in /var/home, and that comes
 # from these two values, so they are checked rather than assumed.
-if [[ -r /etc/default/useradd ]]; then
-    grep -qx 'SHELL=/usr/bin/fish' /etc/default/useradd \
-        || fail "/etc/default/useradd does not default new users to fish: \
-$(grep -E '^SHELL=' /etc/default/useradd || echo 'SHELL is unset')"
-    grep -qx 'HOME=/var/home' /etc/default/useradd \
-        || fail "/etc/default/useradd does not default new users to /var/home"
-    grep -qx 'SKEL=/etc/skel' /etc/default/useradd \
-        || fail "/etc/default/useradd does not point SKEL at /etc/skel"
-else
-    fail "/etc/default/useradd is missing"
-fi
+  if [[ -r /etc/default/useradd ]]; then
+      # read each value out first so the failure message can name it, instead
+      # of building a multiline string with a command substitution inside it
+      useradd_value() { grep -E "^$1=" /etc/default/useradd | head -1 | cut -d= -f2-; }
+      for pair in "SHELL=/usr/bin/fish" "HOME=/var/home" "SKEL=/etc/skel"; do
+          key="${pair%%=*}"
+          want="${pair#*=}"
+          got="$(useradd_value "$key")"
+          [[ "$got" == "$want" ]] \
+              || fail "/etc/default/useradd sets $key='${got}', expected '$want'"
+      done
+  else
+      fail "/etc/default/useradd is missing"
+  fi
 
 [[ -s /usr/bin/fish ]] || fail "fish is not installed but is the default shell"
 [[ -d /etc/skel/.config/fish ]] || fail "skel has no fish configuration"

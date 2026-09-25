@@ -100,6 +100,5 @@ fi
 userdel -r builder 2>/dev/null || userdel builder
 rm -f /tmp/build/yay.log
 
-build_aur_packages
 
 echo "::endgroup::"

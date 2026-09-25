@@ -107,6 +107,103 @@ Rebasing is only offered between **nonsealed** variants of the same channel. Sea
 Refer to the [Variants](https://github.com/tartaria-dev/tartaria#Variants) section above for choosing a variant.
 
 
+## Changelog
+
+What this branch changes relative to upstream `live`. It is a working fork, so
+this is a running list rather than a set of releases: fixes land here first and
+go upstream from here.
+
+### Fixes
+
+- **The image is no longer tied to a release tag.** Every workflow used to check
+  out the newest `v*` tag before building, so a push built whatever was last
+  released instead of the code that was pushed. A tag push now builds that tag;
+  a schedule or a manual run builds the ref that triggered it.
+- **NVIDIA modules are no longer shipped unsigned.** The signing step ran in a
+  loop fed by a pipeline, so when no module matched, the loop body never ran
+  and the build reported success. It now counts what it signed, restores the
+  compressed original if signing fails part way, and re-checks every module for
+  a signature marker afterwards.
+- **A missing tag no longer fails cryptically.** `git checkout ""` produced
+  `fatal: empty string is not a valid pathspec`. The step now says what is
+  missing.
+- **The package database survived the `/var` relocation.** The relocation ran
+  without `set -e`, so a failed move was ignored, and the pattern that rewrote
+  `pacman.conf` dropped every option name, leaving pacman reading a database
+  that had just been moved away.
+- **The module tree is no longer guessed.** With more than one kernel present,
+  picking the newest on disk is a coin flip, and the wrong choice produces an
+  initramfs that boots to nothing. The tree is now recorded from the package's
+  own file list, which is not always the same as the package version, and the
+  build refuses to continue rather than pick one.
+- **The UKI signs the kernel that is actually installed.** The kernel was read
+  with `kver=$(ls /kernel)`, which breaks as soon as more than one kernel is
+  present.
+- **AUR installs report why they failed.** The log was written to one path and
+  printed and cleaned up at another, so a failure printed no reason at all.
+- **The `os-release` rewrite no longer damages it.** Branding is applied by key,
+  so `PRIVACY_POLICY_URL` keeps pointing at the real policy.
+- **The licence claim is correct.** The image said Apache-2.0 while `LICENSE`
+  and every source file say GPL-3.0-only. The OCI label is now set explicitly
+  instead of being inherited from the base image, which was declaring a licence
+  for Arch's own packaging and said nothing about this project.
+
+### New
+
+- **`synergy` on the host.** `synergy shell [command]` enters the mutable
+  subsystem, `synergy --host` returns to the immutable one, `synergy status`
+  reports the variant and whether the subsystem is running, and `synergy rebase`
+  moves between nonsealed variants of the same channel.
+- **The subsystem starts when you ask for it.** The service is no longer enabled
+  at login, and `synergy shell` starts it and waits for it to be ready.
+- **Brew works for every user.** Upstream's units run as uid 1000 and fail for
+  anyone else. Update and upgrade are user units, and the setup step is a
+  drop-in that resolves the real user.
+- **A default shell worth having.** New users get fish in `/var/home`, and
+  `/etc/default/useradd` is checked at build time so it cannot drift.
+- **A system fastfetch config** showing the distro's own logo, validated against
+  fastfetch's published schema.
+- **A build-time verification stage.** `08-verify.sh` runs last and stops the
+  build on a mangled `PRIVACY_POLICY_URL`, a missing initramfs, an unsigned
+  module, a unit that is enabled but does not exist, a unit pointing at a
+  missing binary, a subsystem enabled at login, a root account with a password,
+  or a default shell that is not fish.
+- **`just refresh-pins` and `just check-pins`** to re-resolve the base image
+  digests, and to fail when one of them has moved.
+
+### Stability and reproducibility
+
+- **Every base image is pinned by digest.** `archlinux`, `cachyos-v3`,
+  `chunkah`, `ublue-os/brew` and `tartaria-dev/cherries` are all floating tags,
+  which means the same commit can produce two different images, and a
+  force-pushed upstream tag changes what ships without any commit mentioning it.
+- **The icon theme is pinned to a commit** instead of a branch head.
+- **CachyOS packages come from CachyOS's own mirrors.** The base image's list
+  has two dozen community mirrors with a lagging CDN first, and it fails the
+  transaction with 404s on whatever that node has not synced yet.
+- **A failing pacman transaction fails the stage.** Previously a hook that
+  cannot be executed left the real error on screen while the build carried on
+  and failed later somewhere unrelated.
+- **The build verifies what it produced** rather than trusting that it worked,
+  and the verification is itself now known to work: the check that every unit
+  points at an existing binary was extracting zero paths and passing vacuously.
+- **Root is locked.** There is no legitimate console root login on a graphical
+  image, and a known root password on a published image is an escalation path.
+- **The ISO instructions no longer pipe `curl` into `bash`.**
+
+### Known limitations
+
+- AUR packages are installed by name through `yay`, so the exact tree behind
+  each name is whatever the branch held on build day. The list of what goes in
+  is explicit; the contents behind it are not reproducible. Pinning them was
+  tried and reverted: `yay` is also what resolves AUR-to-AUR dependencies and
+  what handles split packages, and replacing it broke both.
+- No image has completed a full build from this branch yet, so the stages after
+  package installation are unverified on real hardware.
+- Sealed variants still need `SECUREBOOT_KEY`, `SECUREBOOT_CERT`, `MODULE_KEY`
+  and `MODULE_CERT` in the repository secrets. Without them the sealed jobs are
+  skipped with a notice rather than failing.
+
 ## Credits
 Thank you to the [Bootcrew](https://discord.gg/52Qcb4x2w3) team for making this project possible (and for general help)! I'd also like to thank the [XeniaOS](https://github.com/XeniaMeraki/XeniaOS/) and [Zirconium](https://github.com/zirconium-dev/zirconium/) projects for inspiring the creation of Tartaria!
 
