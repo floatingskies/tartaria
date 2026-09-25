@@ -52,6 +52,10 @@ jobs:
       - name: Checkout latest tag
         run: |
           latest=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          if [ -z "$latest" ]; then
+            echo "No 'v*' tag found. This workflow builds the latest release."
+            exit 1
+          fi
           echo "Checking out latest tag: $latest"
           git checkout "$latest"
 
@@ -196,6 +200,10 @@ jobs:
       - name: Checkout latest tag
         run: |
           latest=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          if [ -z "$latest" ]; then
+            echo "No 'v*' tag found. This workflow builds the latest release."
+            exit 1
+          fi
           echo "Checking out latest tag: $latest"
           git checkout "$latest"
 
